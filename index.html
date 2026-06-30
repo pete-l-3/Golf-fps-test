@@ -118,6 +118,28 @@
 
 <div class="log" id="log"></div>
 
+<hr style="border:none; border-top:1px solid #232b25; margin:32px 0;">
+
+<h1>Test 2: Native Capture UI</h1>
+<p class="sub">This triggers the system camera capture screen directly from the page (not a live in-browser stream). Record a few seconds — try swiping to Slow-Mo mode if it's offered. We'll measure the actual fps of the file that comes back.</p>
+
+<button class="btn" id="captureBtn">Open Native Camera Capture</button>
+<input type="file" id="captureInput" accept="video/*" capture="environment" style="display:none;">
+
+<div class="status" id="captureStatus"></div>
+
+<video id="capturedVideo" controls playsinline style="display:none;"></video>
+
+<div class="results" id="captureResults" style="display:none;">
+  <div class="row"><span class="label">File size</span><span class="value" id="capSize">—</span></div>
+  <div class="row"><span class="label">Resolution</span><span class="value" id="capRes">—</span></div>
+  <div class="row"><span class="label">Duration</span><span class="value" id="capDuration">—</span></div>
+  <div class="row"><span class="label">Measured actual FPS</span><span class="value" id="capFps">—</span></div>
+  <div class="verdict" id="capVerdict"></div>
+</div>
+
+<div class="log" id="capLog"></div>
+
 <script>
 const startBtn = document.getElementById('startBtn');
 const retestBtn = document.getElementById('retestBtn');
@@ -259,6 +281,85 @@ startBtn.addEventListener('click', runTest);
 retestBtn.addEventListener('click', runTest);
 
 window.addEventListener('beforeunload', stopStream);
+
+// ---- Test 2: Native capture UI ----
+const captureBtn = document.getElementById('captureBtn');
+const captureInput = document.getElementById('captureInput');
+const captureStatus = document.getElementById('captureStatus');
+const capturedVideo = document.getElementById('capturedVideo');
+const captureResults = document.getElementById('captureResults');
+const capLog = document.getElementById('capLog');
+
+function capLogMsg(msg) {
+  capLog.textContent += msg + '\n';
+  capLog.scrollTop = capLog.scrollHeight;
+}
+
+captureBtn.addEventListener('click', () => {
+  captureInput.value = '';
+  captureInput.click();
+});
+
+captureInput.addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  captureResults.style.display = 'none';
+  capLog.textContent = '';
+  captureStatus.textContent = 'Loading recorded video...';
+
+  capLogMsg('File name: ' + file.name);
+  capLogMsg('File type: ' + file.type);
+  capLogMsg('File size: ' + (file.size / (1024 * 1024)).toFixed(2) + ' MB');
+
+  const url = URL.createObjectURL(file);
+  capturedVideo.src = url;
+  capturedVideo.style.display = 'block';
+
+  await new Promise((resolve) => {
+    capturedVideo.onloadedmetadata = resolve;
+  });
+
+  document.getElementById('capSize').textContent = (file.size / (1024 * 1024)).toFixed(2) + ' MB';
+  document.getElementById('capRes').textContent = capturedVideo.videoWidth + ' x ' + capturedVideo.videoHeight;
+  document.getElementById('capDuration').textContent = capturedVideo.duration.toFixed(2) + 's';
+
+  captureStatus.textContent = 'Measuring actual frame rate of the recorded file (playing it back)...';
+
+  // Play the file and count real decoded frames over its playback to measure true fps
+  capturedVideo.muted = true;
+  capturedVideo.currentTime = 0;
+  await capturedVideo.play();
+
+  const windowMs = Math.min(capturedVideo.duration * 1000 - 200, 3000);
+  let measuredFps;
+  try {
+    measuredFps = await measureActualFps(capturedVideo, Math.max(windowMs, 300));
+  } catch (err) {
+    measuredFps = NaN;
+    capLogMsg('Measurement error: ' + err.message);
+  }
+  capturedVideo.pause();
+
+  document.getElementById('capFps').textContent = isNaN(measuredFps) ? 'unable to measure' : measuredFps.toFixed(1) + ' fps';
+
+  const verdictEl = document.getElementById('capVerdict');
+  if (!isNaN(measuredFps) && measuredFps >= 100) {
+    verdictEl.className = 'verdict good';
+    verdictEl.textContent = 'High frame rate detected — this looks like Slow-Mo was used (or was available and selectable) in this capture flow. This could let the app trigger high-fps recording with one tap, no separate Camera app trip needed.';
+  } else if (!isNaN(measuredFps) && measuredFps >= 50) {
+    verdictEl.className = 'verdict mid';
+    verdictEl.textContent = 'Moderate frame rate. Slow-Mo may not have been selected/available in this flow, or only a higher standard rate was used. Worth trying again and explicitly swiping to Slow-Mo mode if the option appeared.';
+  } else {
+    verdictEl.className = 'verdict bad';
+    verdictEl.textContent = 'Standard frame rate only. This capture flow appears locked to normal video mode — Slow-Mo isn\'t accessible this way. The manual Camera app + import path is needed for high-fps recording.';
+  }
+
+  captureResults.style.display = 'block';
+  captureStatus.textContent = 'Test complete. Did you see a Slow-Mo option while recording? Note that for our records.';
+
+  capLogMsg('Measured fps: ' + measuredFps);
+});
 </script>
 
 </body>
