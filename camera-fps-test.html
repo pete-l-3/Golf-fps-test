@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Camera FPS Test</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+    background: #0b0f0c;
+    color: #eef2ef;
+    padding: 20px;
+    padding-bottom: 60px;
+  }
+  h1 {
+    font-size: 20px;
+    margin: 0 0 4px;
+    color: #fff;
+  }
+  p.sub {
+    color: #8a948e;
+    font-size: 13px;
+    margin: 0 0 20px;
+    line-height: 1.4;
+  }
+  video {
+    width: 100%;
+    border-radius: 12px;
+    background: #000;
+    margin-bottom: 16px;
+    display: block;
+  }
+  .btn {
+    width: 100%;
+    padding: 16px;
+    border-radius: 12px;
+    border: none;
+    font-size: 16px;
+    font-weight: 600;
+    margin-bottom: 10px;
+    background: #34c759;
+    color: #06210f;
+  }
+  .btn:disabled {
+    background: #2a2f2c;
+    color: #6b7268;
+  }
+  .btn.secondary {
+    background: #1c2420;
+    color: #eef2ef;
+    border: 1px solid #2e352f;
+  }
+  .results {
+    background: #141a16;
+    border: 1px solid #232b25;
+    border-radius: 12px;
+    padding: 14px;
+    margin-top: 16px;
+  }
+  .row {
+    display: flex;
+    justify-content: space-between;
+    padding: 8px 0;
+    border-bottom: 1px solid #1f2620;
+    font-size: 14px;
+  }
+  .row:last-child { border-bottom: none; }
+  .row .label { color: #8a948e; }
+  .row .value { font-weight: 600; color: #fff; }
+  .verdict {
+    margin-top: 14px;
+    padding: 12px;
+    border-radius: 10px;
+    font-size: 13px;
+    line-height: 1.5;
+  }
+  .verdict.good { background: #102b16; color: #6fe28a; }
+  .verdict.bad { background: #2b1414; color: #ff9b9b; }
+  .verdict.mid { background: #2b2410; color: #ffd479; }
+  .status {
+    font-size: 13px;
+    color: #8a948e;
+    text-align: center;
+    margin: 10px 0;
+  }
+  .log {
+    font-family: ui-monospace, monospace;
+    font-size: 11px;
+    color: #5d655f;
+    margin-top: 14px;
+    white-space: pre-wrap;
+    max-height: 120px;
+    overflow-y: auto;
+  }
+</style>
+</head>
+<body>
+
+<h1>Camera FPS Test</h1>
+<p class="sub">Tests the real, measured frame rate the browser can pull from the back camera — not just what it claims to negotiate. Run this on the phone you'll actually use for the app, in Safari.</p>
+
+<video id="preview" autoplay playsinline muted></video>
+
+<button class="btn" id="startBtn">Start Camera & Test</button>
+<button class="btn secondary" id="retestBtn" style="display:none;">Run Another Test</button>
+
+<div class="status" id="status"></div>
+
+<div class="results" id="results" style="display:none;">
+  <div class="row"><span class="label">Requested (ideal)</span><span class="value" id="reqVal">—</span></div>
+  <div class="row"><span class="label">Browser-reported (settings)</span><span class="value" id="settingsVal">—</span></div>
+  <div class="row"><span class="label">Device max capability</span><span class="value" id="capVal">—</span></div>
+  <div class="row"><span class="label">Measured actual FPS</span><span class="value" id="measuredVal">—</span></div>
+  <div class="verdict" id="verdict"></div>
+</div>
+
+<div class="log" id="log"></div>
+
+<script>
+const startBtn = document.getElementById('startBtn');
+const retestBtn = document.getElementById('retestBtn');
+const statusEl = document.getElementById('status');
+const resultsEl = document.getElementById('results');
+const logEl = document.getElementById('log');
+const video = document.getElementById('preview');
+
+let currentStream = null;
+
+function log(msg) {
+  logEl.textContent += msg + '\n';
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+function stopStream() {
+  if (currentStream) {
+    currentStream.getTracks().forEach(t => t.stop());
+    currentStream = null;
+  }
+}
+
+async function runTest() {
+  resultsEl.style.display = 'none';
+  logEl.textContent = '';
+  startBtn.disabled = true;
+  startBtn.textContent = 'Requesting camera...';
+  statusEl.textContent = '';
+
+  if (!('mediaDevices' in navigator) || !navigator.mediaDevices.getUserMedia) {
+    statusEl.textContent = 'getUserMedia not available. This page must be loaded over HTTPS (not a local file) for camera access to work.';
+    startBtn.disabled = false;
+    startBtn.textContent = 'Start Camera & Test';
+    return;
+  }
+
+  const requestedFps = 240;
+
+  try {
+    stopStream();
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: false,
+      video: {
+        facingMode: { ideal: 'environment' },
+        frameRate: { ideal: requestedFps, min: 1 },
+        width: { ideal: 1280 },
+        height: { ideal: 720 }
+      }
+    });
+    currentStream = stream;
+    video.srcObject = stream;
+    await video.play();
+
+    const track = stream.getVideoTracks()[0];
+    log('Track label: ' + track.label);
+
+    const settings = track.getSettings ? track.getSettings() : {};
+    log('Settings: ' + JSON.stringify(settings));
+
+    let caps = {};
+    try {
+      caps = track.getCapabilities ? track.getCapabilities() : {};
+      log('Capabilities: ' + JSON.stringify(caps));
+    } catch (e) {
+      log('getCapabilities not supported: ' + e.message);
+    }
+
+    document.getElementById('reqVal').textContent = requestedFps + ' fps';
+    document.getElementById('settingsVal').textContent = settings.frameRate
+      ? Number(settings.frameRate).toFixed(1) + ' fps'
+      : 'not reported';
+    document.getElementById('capVal').textContent = (caps.frameRate && caps.frameRate.max)
+      ? caps.frameRate.max + ' fps max'
+      : 'not reported';
+
+    // Measure real frames over a window
+    statusEl.textContent = 'Measuring real frame delivery for 3 seconds — keep the camera pointed at something with motion...';
+
+    let measuredFps = await measureActualFps(video, 3000);
+    document.getElementById('measuredVal').textContent = measuredFps.toFixed(1) + ' fps';
+
+    const verdictEl = document.getElementById('verdict');
+    if (measuredFps >= 100) {
+      verdictEl.className = 'verdict good';
+      verdictEl.textContent = 'High frame rate achieved. Live in-app recording could work well for shot detection and reasonable trajectory data.';
+    } else if (measuredFps >= 50) {
+      verdictEl.className = 'verdict mid';
+      verdictEl.textContent = 'Moderate frame rate. Good enough for shot detection and rough direction, but ball-speed/launch-angle accuracy will be limited.';
+    } else {
+      verdictEl.className = 'verdict bad';
+      verdictEl.textContent = 'Capped around standard video rate (~30fps). Live in-app recording will only reliably support shot detection and rough direction — not speed or precise launch angle. The native Slow-Mo import approach is the better fit for real metrics.';
+    }
+
+    resultsEl.style.display = 'block';
+    statusEl.textContent = 'Test complete.';
+  } catch (err) {
+    statusEl.textContent = 'Error: ' + err.message;
+    log('Error: ' + err.name + ' — ' + err.message);
+  }
+
+  startBtn.disabled = false;
+  startBtn.textContent = 'Start Camera & Test';
+  retestBtn.style.display = 'block';
+}
+
+function measureActualFps(videoEl, durationMs) {
+  return new Promise((resolve) => {
+    let count = 0;
+    let startTime = null;
+
+    if ('requestVideoFrameCallback' in videoEl) {
+      function frameCb(now, metadata) {
+        if (startTime === null) startTime = now;
+        count++;
+        if (now - startTime < durationMs) {
+          videoEl.requestVideoFrameCallback(frameCb);
+        } else {
+          resolve((count / (now - startTime)) * 1000);
+        }
+      }
+      videoEl.requestVideoFrameCallback(frameCb);
+    } else {
+      // Fallback: rAF-based sampling (less accurate, ties to display refresh rate)
+      function raf(now) {
+        if (startTime === null) startTime = now;
+        count++;
+        if (now - startTime < durationMs) {
+          requestAnimationFrame(raf);
+        } else {
+          resolve((count / (now - startTime)) * 1000);
+        }
+      }
+      requestAnimationFrame(raf);
+    }
+  });
+}
+
+startBtn.addEventListener('click', runTest);
+retestBtn.addEventListener('click', runTest);
+
+window.addEventListener('beforeunload', stopStream);
+</script>
+
+</body>
+</html>
