@@ -57,10 +57,15 @@
   .back::before { content: '←'; }
 
   select, input[type=text] {
-    width: 100%; padding: 14px; border-radius: 12px; border: 1px solid rgba(242,236,220,0.18);
-    background: rgba(242,236,220,0.06); color: var(--parchment); font-size: 15px; font-family: 'Inter', sans-serif; margin-bottom: 14px;
+    width: 100%; padding: 14px 40px 14px 14px; border-radius: 12px; border: 1px solid rgba(242,236,220,0.18);
+    background-color: var(--fairway-deep); color: var(--parchment); font-size: 15px; font-family: 'Inter', sans-serif; margin-bottom: 14px;
   }
-  select option { color: #000; }
+  select {
+    -webkit-appearance: none; appearance: none;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='%23E0BE4F'><path d='M5.5 7.5l4.5 5 4.5-5z'/></svg>");
+    background-repeat: no-repeat; background-position: right 14px center; background-size: 16px;
+  }
+  select option { color: #000; background: #fff; }
   label.field-label { font-size: 11.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--sage); font-weight: 700; margin-bottom: 6px; display: block; }
 
   /* Camera preview */
@@ -138,6 +143,7 @@
   .suggestion-box { background: rgba(201,162,39,0.1); border: 1px solid rgba(201,162,39,0.25); border-radius: 14px; padding: 14px; font-size: 13.5px; line-height: 1.5; color: var(--brass-light); margin-bottom: 16px; }
 
   .hidden-input { display: none; }
+  .offscreen-video { position: fixed; top: 0; left: 0; width: 2px; height: 2px; opacity: 0.01; pointer-events: none; z-index: -1; }
   .toast { position: fixed; bottom: 24px; left: 20px; right: 20px; background: var(--parchment); color: var(--ink); border-radius: 12px; padding: 14px 16px; font-size: 13.5px; font-weight: 600; box-shadow: 0 12px 30px -10px rgba(0,0,0,0.5); transform: translateY(100px); opacity: 0; transition: all .3s ease; z-index: 50; }
   .toast.show { transform: translateY(0); opacity: 1; }
 </style>
@@ -250,7 +256,7 @@
     <p class="lede" id="importLede">Select the Slo-Mo clip from her Photos library.</p>
 
     <input type="file" id="fileInput" class="hidden-input" accept="video/*">
-    <video id="sourceVideo" class="hidden-input" playsinline muted></video>
+    <video id="sourceVideo" class="offscreen-video" playsinline muted></video>
 
     <div id="importPickStage">
       <button class="btn btn-primary" id="pickFileBtn">Choose Video</button>
@@ -467,6 +473,7 @@ document.getElementById('fileInput').addEventListener('change', async (e) => {
   document.getElementById('importPickStage').style.display = 'none';
   document.getElementById('calibrateStage').style.display = 'block';
   document.getElementById('calibWrap').style.display = 'block';
+  document.getElementById('calibInstruction').textContent = 'Loading the first frame of her video…';
   calibPoints = [];
   drawCalibFrame();
 });
@@ -477,12 +484,24 @@ function drawCalibFrame() {
   canvas.width = video.videoWidth;
   canvas.height = video.videoHeight;
   const ctx = canvas.getContext('2d');
-  video.currentTime = 0.05;
+
+  let settled = false;
+  const failTimer = setTimeout(() => {
+    if (settled) return;
+    settled = true;
+    document.getElementById('calibInstruction').textContent =
+      "Couldn't load a frame from that video — try Restart Taps, or go back and pick the file again.";
+  }, 4000);
+
   video.onseeked = () => {
+    if (settled) return;
+    settled = true;
+    clearTimeout(failTimer);
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     redrawCalibPoints();
     updateCalibInstruction();
   };
+  video.currentTime = 0.05;
 }
 function redrawCalibPoints() {
   const video = document.getElementById('sourceVideo');
@@ -530,6 +549,7 @@ document.getElementById('calibCanvas').addEventListener('click', (e) => {
 });
 document.getElementById('calibResetBtn').addEventListener('click', () => {
   calibPoints = [];
+  document.getElementById('calibInstruction').textContent = 'Loading the first frame of her video…';
   drawCalibFrame();
 });
 
