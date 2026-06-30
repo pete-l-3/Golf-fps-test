@@ -64,10 +64,11 @@
   label.field-label { font-size: 11.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--sage); font-weight: 700; margin-bottom: 6px; display: block; }
 
   /* Camera preview */
-  .preview-wrap { position: relative; border-radius: 16px; overflow: hidden; background: #000; margin-bottom: 16px; aspect-ratio: 3/4; }
+  .preview-wrap { position: relative; border-radius: 16px; overflow: hidden; background: #000; margin-bottom: 16px; aspect-ratio: 16/9; }
   .preview-wrap video, .preview-wrap canvas { width: 100%; height: 100%; object-fit: cover; display: block; }
-  .guide-box { position: absolute; border: 2px dashed var(--brass-light); border-radius: 6px; pointer-events: none; }
+  .setup-guide-svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
   .guide-label { position: absolute; bottom: 8px; left: 8px; right: 8px; background: rgba(10,31,21,0.7); color: var(--parchment); font-size: 11.5px; padding: 8px 10px; border-radius: 8px; line-height: 1.4; text-align: center; }
+  .landscape-flag { position: absolute; top: 8px; right: 8px; background: rgba(10,31,21,0.7); color: var(--brass-light); font-size: 10.5px; font-weight: 700; padding: 5px 9px; border-radius: 100px; letter-spacing: .04em; text-transform: uppercase; }
 
   .tip-list { list-style: none; padding: 0; margin: 0 0 18px; }
   .tip-list li { font-size: 13px; line-height: 1.5; color: var(--sage); padding: 7px 0 7px 20px; position: relative; border-bottom: 1px solid rgba(242,236,220,0.06); }
@@ -122,7 +123,7 @@
 <!-- ============ HOME ============ -->
 <div class="view active" id="view-home">
   <div class="eyebrow">Practice Tracker</div>
-  <h1 class="page-title">Her sessions</h1>
+  <h1 class="page-title">Sessions</h1>
   <p class="lede">Every bucket of balls, broken down shot by shot.</p>
   <div id="sessionList"></div>
   <div class="spacer"></div>
@@ -140,7 +141,7 @@
   <label class="field-label">Club</label>
   <select id="clubSelect">
     <option>Driver</option><option>3 Wood</option><option>5 Wood</option>
-    <option>3 Hybrid</option><option>4 Iron</option><option>5 Iron</option>
+    <option>3 Hybrid</option><option>3 Iron</option><option>4 Iron</option><option>5 Iron</option>
     <option>6 Iron</option><option>7 Iron</option><option>8 Iron</option>
     <option>9 Iron</option><option>PW</option><option>GW</option>
     <option>SW</option><option>LW</option><option>Putter</option>
@@ -148,13 +149,33 @@
 
   <div class="preview-wrap" id="previewWrap">
     <video id="alignVideo" autoplay playsinline muted></video>
-    <div class="guide-box" id="guideBox"></div>
-    <div class="guide-label">Line up the 1'×1' square inside the dashed box</div>
+    <span class="landscape-flag">⟷ Landscape</span>
+    <svg class="setup-guide-svg" viewBox="0 0 400 225" preserveAspectRatio="xMidYMid slice">
+      <!-- ground line -->
+      <line x1="0" y1="188" x2="400" y2="188" stroke="rgba(242,236,220,0.22)" stroke-width="1" stroke-dasharray="4 5"/>
+      <!-- golfer silhouette, address stance, facing the ball marker -->
+      <g transform="translate(252,86)" fill="rgba(242,236,220,0.6)">
+        <circle cx="0" cy="0" r="11"/>
+        <path d="M -7 9 Q -19 38 -9 68 L 9 68 Q 19 38 7 9 Z"/>
+        <line x1="-5" y1="64" x2="-13" y2="98" stroke="rgba(242,236,220,0.6)" stroke-width="7" stroke-linecap="round"/>
+        <line x1="5" y1="64" x2="13" y2="98" stroke="rgba(242,236,220,0.6)" stroke-width="7" stroke-linecap="round"/>
+        <line x1="0" y1="18" x2="-66" y2="92" stroke="rgba(242,236,220,0.6)" stroke-width="4.5" stroke-linecap="round"/>
+      </g>
+      <text x="252" y="118" font-family="Inter, sans-serif" font-size="11" fill="#E0BE4F" text-anchor="middle" font-weight="600">She stands here</text>
+      <!-- ball marker / imaginary 1ft square zone -->
+      <g transform="translate(176,184)">
+        <rect x="-24" y="-11" width="48" height="22" rx="5" fill="none" stroke="#C9A227" stroke-width="1.5" stroke-dasharray="5 4"/>
+        <circle cx="0" cy="0" r="4.5" fill="#F2ECDC" stroke="#0F2B1D" stroke-width="1"/>
+      </g>
+      <text x="176" y="212" font-family="Inter, sans-serif" font-size="11" fill="#E0BE4F" text-anchor="middle" font-weight="600">Ball goes here</text>
+    </svg>
   </div>
 
   <ul class="tip-list">
+    <li>Mount the phone <b style="color:var(--brass-light)">sideways (landscape)</b> on the tripod — it captures the widest view of the swing and flight</li>
     <li>Stand the phone behind her, roughly hip height</li>
-    <li>Try ~6–8 ft back to start, then adjust until the square frames well</li>
+    <li>Mark a 1'×1' square on the ground (tape, chalk, a hoop — whatever's handy) where the ball goes. It's just for her own consistency, so she places the ball in the same spot every time — the camera doesn't need to "see" it</li>
+    <li>Try ~6–8 ft back to start, then adjust until she and the ball both frame comfortably</li>
     <li>This preview is just for lining things up — actual recording happens in Camera, not here</li>
   </ul>
 
@@ -183,6 +204,7 @@
   </div>
 
   <ol class="tip-list" style="list-style:none; padding:0;">
+    <li>Rotate the phone to <b style="color:var(--brass-light)">landscape</b> before recording — same orientation as the setup preview</li>
     <li>Press Home, open Camera, swipe to <b style="color:var(--brass-light)">SLO-MO</b></li>
     <li>First time: confirm 240fps in Settings → Camera → Record Slo-mo</li>
     <li>Record through the whole bucket, then stop</li>
@@ -365,10 +387,9 @@ async function startAlignPreview() {
   try {
     alignStream = await navigator.mediaDevices.getUserMedia({
       audio: false,
-      video: { facingMode: { ideal: 'environment' } }
+      video: { facingMode: { ideal: 'environment' }, aspectRatio: { ideal: 16/9 } }
     });
     document.getElementById('alignVideo').srcObject = alignStream;
-    positionGuideBox();
   } catch (err) {
     toast('Camera preview unavailable: ' + err.message);
   }
@@ -376,17 +397,6 @@ async function startAlignPreview() {
 function stopAlignPreview() {
   if (alignStream) { alignStream.getTracks().forEach(t => t.stop()); alignStream = null; }
 }
-function positionGuideBox() {
-  const wrap = document.getElementById('previewWrap');
-  const box = document.getElementById('guideBox');
-  const w = wrap.clientWidth, h = wrap.clientHeight;
-  const size = Math.min(w, h) * 0.32;
-  box.style.width = size + 'px';
-  box.style.height = size + 'px';
-  box.style.left = ((w - size) / 2) + 'px';
-  box.style.top = (h * 0.58) + 'px';
-}
-window.addEventListener('resize', positionGuideBox);
 
 document.getElementById('setupBack').addEventListener('click', () => { stopAlignPreview(); showView('view-home'); renderHome(); });
 document.getElementById('setupContinueBtn').addEventListener('click', () => {
