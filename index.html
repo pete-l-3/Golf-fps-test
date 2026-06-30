@@ -70,7 +70,13 @@
 
   /* Camera preview */
   .preview-wrap { position: relative; border-radius: 16px; overflow: hidden; background: #000; margin-bottom: 16px; aspect-ratio: 16/9; }
-  .preview-wrap video, .preview-wrap canvas { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .preview-wrap video, .preview-wrap canvas:not(.magnifier) { width: 100%; height: 100%; object-fit: cover; display: block; }
+  #calibCanvas { touch-action: none; cursor: crosshair; }
+  .magnifier {
+    position: absolute; width: 130px; height: 130px; border-radius: 50%;
+    border: 3px solid var(--brass); box-shadow: 0 8px 24px -6px rgba(0,0,0,0.6);
+    pointer-events: none; display: none; z-index: 20; background: #000;
+  }
   .setup-guide-svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
   .guide-label { position: absolute; bottom: 8px; left: 8px; right: 8px; background: rgba(10,31,21,0.7); color: var(--parchment); font-size: 11.5px; padding: 8px 10px; border-radius: 8px; line-height: 1.4; text-align: center; }
 
@@ -185,7 +191,7 @@
     <ul class="tip-list">
       <li>Mount the phone <b style="color:var(--brass-light)">sideways (landscape)</b> on the tripod — it captures the widest view of the swing and flight</li>
       <li>Stand the phone behind her, roughly hip height</li>
-      <li>Mark a 1'×1' square on the ground (tape, chalk, a hoop — whatever's handy) where the ball goes. It's mainly for her own consistency between shots — the box in the preview just shows how much wiggle room the camera can still track within</li>
+      <li>No physical markers needed — the app uses the golf ball itself (a known, fixed size) for scale, and the box in the preview just shows roughly how much room the camera can track within</li>
       <li>Try ~6–8 ft back to start, then adjust until the ball placement box frames comfortably in view</li>
       <li>This preview is just for lining things up — actual recording happens in Camera, not here</li>
     </ul>
@@ -264,7 +270,11 @@
 
     <div id="calibrateStage" style="display:none;">
       <p class="lede" id="calibInstruction"></p>
-      <button class="btn btn-ghost" id="calibResetBtn">Restart Taps</button>
+      <div id="autoDetectConfirm" style="display:none; margin-top:6px;">
+        <button class="btn btn-primary" id="confirmBallBtn">Yes, that's the ball</button>
+        <button class="btn btn-ghost" id="rejectBallBtn">No, let me tap it</button>
+      </div>
+      <button class="btn btn-ghost" id="calibResetBtn">Restart</button>
     </div>
 
     <div id="processStage" style="display:none;">
@@ -277,6 +287,7 @@
   <div class="stage" id="importStage" style="justify-content:center;">
     <div class="preview-wrap" id="calibWrap" style="aspect-ratio:auto; display:none;">
       <canvas id="calibCanvas"></canvas>
+      <canvas id="magnifierCanvas" class="magnifier" width="160" height="160"></canvas>
     </div>
   </div>
 </div>
@@ -381,7 +392,7 @@ function toast(msg) {
 /* ===================== STATE ===================== */
 let draftSession = null;       // session being built during setup/import
 let alignStream = null;        // live camera preview stream (setup screen only)
-let calibPoints = [];          // taps during calibration: [{x,y}, {x,y}, {x,y}]
+let calibPoints = [];          // taps during calibration: [refObjectEndA, refObjectEndB, zoneCornerA, zoneCornerB]
 let currentSourceFile = null;
 
 /* ===================== HOME ===================== */
@@ -480,6 +491,9 @@ document.getElementById('fileInput').addEventListener('change', async (e) => {
   document.getElementById('calibWrap').style.display = 'block';
   document.getElementById('calibInstruction').textContent = 'Loading the first frame of her video — large Slo-Mo files can take a bit…';
   calibPoints = [];
+  calibPhase = 'zone';
+  zoneRect = null;
+  calibAnalysisStarted = false;
   drawCalibFrame();
 });
 
@@ -516,13 +530,21 @@ function redrawCalibPoints() {
   ctx.fillStyle = '#C9A227';
   ctx.strokeStyle = '#0F2B1D';
   ctx.lineWidth = 3;
-  calibPoints.forEach((p, i) => {
+  calibPoints.forEach((p) => {
     ctx.beginPath();
     ctx.arc(p.x, p.y, 10, 0, Math.PI*2);
     ctx.fill();
     ctx.stroke();
   });
-  if (calibPoints.length >= 2) {
+  if (calibPhase === 'zone' && calibPoints.length >= 2) {
+    const [a, b] = calibPoints;
+    ctx.strokeStyle = '#E0BE4F';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([8, 6]);
+    ctx.strokeRect(Math.min(a.x,b.x), Math.min(a.y,b.y), Math.abs(b.x-a.x), Math.abs(b.y-a.y));
+    ctx.setLineDash([]);
+  }
+  if (calibPhase === 'manualBall' && calibPoints.length >= 2) {
     ctx.strokeStyle = '#C9A227';
     ctx.lineWidth = 2;
     ctx.beginPath();
@@ -531,29 +553,192 @@ function redrawCalibPoints() {
     ctx.stroke();
   }
 }
+
 function updateCalibInstruction() {
-  const msgs = [
-    "Tap the LEFT edge of the 1'×1' square on the ground.",
-    "Now tap the RIGHT edge of the same square.",
-    "Last one: tap exactly where the ball sits, ready to hit."
-  ];
-  document.getElementById('calibInstruction').textContent = calibPoints.length < 3 ? msgs[calibPoints.length] : 'Calibration set.';
+  if (calibPhase === 'zone') {
+    const msgs = [
+      "Press one corner of the general area she'll hit from — doesn't need to be exact, the ball will land in different spots between shots.",
+      "Last one: the opposite corner to finish the box."
+    ];
+    if (calibPoints.length < msgs.length) document.getElementById('calibInstruction').textContent = msgs[calibPoints.length];
+  } else if (calibPhase === 'manualBall') {
+    const msgs = [
+      "Press near the LEFT edge of the ball and drag to fine-tune, then lift your finger.",
+      "Now the RIGHT edge of that same ball."
+    ];
+    if (calibPoints.length < msgs.length) document.getElementById('calibInstruction').textContent = msgs[calibPoints.length];
+  }
 }
-document.getElementById('calibCanvas').addEventListener('click', (e) => {
-  if (calibPoints.length >= 3) return;
-  const canvas = e.target;
-  const rect = canvas.getBoundingClientRect();
-  const scaleX = canvas.width / rect.width, scaleY = canvas.height / rect.height;
-  const x = (e.clientX - rect.left) * scaleX, y = (e.clientY - rect.top) * scaleY;
-  calibPoints.push({ x, y });
+
+/* Press-and-drag calibration with a zoomed magnifier, since small targets are
+   hard to tap accurately with a fingertip otherwise. The point only commits
+   on release, after she's had a chance to fine-tune it while watching the
+   zoomed preview — same pattern as iOS's own text-cursor magnifier. */
+const calibCanvasEl = document.getElementById('calibCanvas');
+const magnifierEl = document.getElementById('magnifierCanvas');
+const magCtx = magnifierEl.getContext('2d');
+const MAG_ZOOM = 3.5;
+let calibDragging = false;
+let calibPending = null;
+let calibPhase = 'zone'; // 'zone' -> 'autodetect' -> 'confirm' -> ['done' | 'manualBall'] -> 'done'
+let zoneRect = null;
+
+function canvasPointFromEvent(e) {
+  const rect = calibCanvasEl.getBoundingClientRect();
+  const scaleX = calibCanvasEl.width / rect.width, scaleY = calibCanvasEl.height / rect.height;
+  return {
+    x: (e.clientX - rect.left) * scaleX,
+    y: (e.clientY - rect.top) * scaleY,
+    clientX: e.clientX - rect.left,
+    clientY: e.clientY - rect.top
+  };
+}
+function showMagnifier(pt) {
+  const srcSize = magnifierEl.width / MAG_ZOOM;
+  magCtx.clearRect(0, 0, magnifierEl.width, magnifierEl.height);
+  magCtx.drawImage(calibCanvasEl, pt.x - srcSize/2, pt.y - srcSize/2, srcSize, srcSize, 0, 0, magnifierEl.width, magnifierEl.height);
+  magCtx.strokeStyle = '#C9A227';
+  magCtx.lineWidth = 1.5;
+  magCtx.beginPath();
+  magCtx.moveTo(magnifierEl.width/2, 0); magCtx.lineTo(magnifierEl.width/2, magnifierEl.height);
+  magCtx.moveTo(0, magnifierEl.height/2); magCtx.lineTo(magnifierEl.width, magnifierEl.height/2);
+  magCtx.stroke();
+
+  const bubbleSize = 130;
+  let left = pt.clientX - bubbleSize/2;
+  let top = pt.clientY - bubbleSize - 50; // float above the finger
+  if (top < 0) top = pt.clientY + 30;     // flip below if too near the top edge
+  magnifierEl.style.left = left + 'px';
+  magnifierEl.style.top = top + 'px';
+  magnifierEl.style.display = 'block';
+}
+function hideMagnifier() { magnifierEl.style.display = 'none'; }
+
+function commitCalibPoint(pt) {
+  calibPoints.push({ x: pt.x, y: pt.y });
   redrawCalibPoints();
   updateCalibInstruction();
-  if (calibPoints.length === 3) {
-    setTimeout(beginAnalysis, 400);
+
+  if (calibPhase === 'zone' && calibPoints.length === 2) {
+    const [a, b] = calibPoints;
+    zoneRect = { x0: Math.min(a.x,b.x), y0: Math.min(a.y,b.y), x1: Math.max(a.x,b.x), y1: Math.max(a.y,b.y) };
+    calibPhase = 'autodetect';
+    calibPoints = [];
+    runAutoDetect();
+  } else if (calibPhase === 'manualBall' && calibPoints.length === 2) {
+    const diameterPx = Math.hypot(calibPoints[1].x - calibPoints[0].x, calibPoints[1].y - calibPoints[0].y);
+    finishCalibration(diameterPx);
   }
+}
+
+calibCanvasEl.addEventListener('pointerdown', (e) => {
+  if (calibPhase !== 'zone' && calibPhase !== 'manualBall') return;
+  e.preventDefault();
+  calibDragging = true;
+  calibPending = canvasPointFromEvent(e);
+  showMagnifier(calibPending);
+  calibCanvasEl.setPointerCapture(e.pointerId);
 });
+calibCanvasEl.addEventListener('pointermove', (e) => {
+  if (!calibDragging) return;
+  calibPending = canvasPointFromEvent(e);
+  showMagnifier(calibPending);
+});
+calibCanvasEl.addEventListener('pointerup', () => {
+  if (!calibDragging) return;
+  calibDragging = false;
+  hideMagnifier();
+  if (calibPending) commitCalibPoint(calibPending);
+  calibPending = null;
+});
+calibCanvasEl.addEventListener('pointercancel', () => {
+  calibDragging = false; hideMagnifier(); calibPending = null;
+});
+
+/* Automatic ball-size detection: scan the first couple seconds within the
+   zone she marked, looking for a steady, ball-sized bright blob. Reuses the
+   same blob search the main detection pipeline uses, but here we also
+   measure its pixel size (not just position), since a regulation ball's
+   real diameter (0.14ft) is a known constant we can scale against. */
+let lastAutoDetectPx = null;
+async function runAutoDetect() {
+  document.getElementById('calibInstruction').textContent = 'Looking for the ball in that area…';
+  const video = document.getElementById('sourceVideo');
+  const canvas = document.getElementById('calibCanvas');
+  const ctx = canvas.getContext('2d');
+
+  function seekTo(t) {
+    return new Promise((resolve) => {
+      video.onseeked = () => { ctx.drawImage(video, 0, 0, canvas.width, canvas.height); resolve(); };
+      video.currentTime = Math.min(Math.max(t, 0), video.duration - 0.001);
+    });
+  }
+
+  const scanWindow = Math.min(2, video.duration - 0.1);
+  let best = null;
+  for (let t = 0.05; t < scanWindow; t += 0.15) {
+    await seekTo(t);
+    const found = findBallBlobWithSize(ctx, canvas, zoneRect.x0, zoneRect.y0, zoneRect.x1, zoneRect.y1, BRIGHT_THRESHOLD);
+    if (found && (!best || found.score > best.score)) best = found;
+  }
+
+  if (best) {
+    lastAutoDetectPx = best.diameterPx;
+    await seekTo(0.05);
+    redrawZoneAndCircle(ctx, canvas, best);
+    document.getElementById('calibInstruction').textContent = "Found what looks like the ball — circled below.";
+    document.getElementById('autoDetectConfirm').style.display = 'block';
+    calibPhase = 'confirm';
+  } else {
+    document.getElementById('calibInstruction').textContent =
+      "Couldn't confidently spot the ball automatically — let's do it manually instead.";
+    startManualBallFallback();
+  }
+}
+
+function redrawZoneAndCircle(ctx, canvas, found) {
+  ctx.drawImage(document.getElementById('sourceVideo'), 0, 0, canvas.width, canvas.height);
+  ctx.strokeStyle = '#E0BE4F'; ctx.lineWidth = 2; ctx.setLineDash([8,6]);
+  ctx.strokeRect(zoneRect.x0, zoneRect.y0, zoneRect.x1 - zoneRect.x0, zoneRect.y1 - zoneRect.y0);
+  ctx.setLineDash([]);
+  ctx.strokeStyle = '#C9A227'; ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.arc(found.x, found.y, found.diameterPx / 2, 0, Math.PI*2);
+  ctx.stroke();
+}
+
+function startManualBallFallback() {
+  calibPhase = 'manualBall';
+  calibPoints = [];
+  document.getElementById('autoDetectConfirm').style.display = 'none';
+  redrawCalibPoints();
+  updateCalibInstruction();
+}
+
+document.getElementById('confirmBallBtn').addEventListener('click', () => {
+  document.getElementById('autoDetectConfirm').style.display = 'none';
+  finishCalibration(lastAutoDetectPx);
+});
+document.getElementById('rejectBallBtn').addEventListener('click', () => {
+  startManualBallFallback();
+});
+
+function finishCalibration(ballDiameterPxMeasured) {
+  draftSession._calibBallDiameterPx = ballDiameterPxMeasured;
+  draftSession._calibZoneRect = zoneRect;
+  calibAnalysisStarted = true;
+  document.getElementById('calibInstruction').textContent = 'Calibration set.';
+  setTimeout(beginAnalysis, 300);
+}
+
+let calibAnalysisStarted = false;
+
 document.getElementById('calibResetBtn').addEventListener('click', () => {
   calibPoints = [];
+  calibPhase = 'zone';
+  zoneRect = null;
+  calibAnalysisStarted = false;
+  document.getElementById('autoDetectConfirm').style.display = 'none';
   document.getElementById('calibInstruction').textContent = 'Loading the first frame of her video…';
   drawCalibFrame();
 });
@@ -561,7 +746,7 @@ document.getElementById('calibResetBtn').addEventListener('click', () => {
 /* ===================== ANALYSIS PIPELINE ===================== */
 // NOTE: This is a v1 heuristic, untested against real footage. Thresholds below
 // are reasonable starting points and will likely need tuning after real sessions.
-const BALL_DIAMETER_FT = 0.14;
+const BALL_DIAMETER_FT = 0.14;       // regulation golf ball — our one fixed known size, used both for auto-detecting scale and for sizing the search/detection logic
 const BRIGHT_THRESHOLD = 175;        // 0-255 luminance considered "bright" (ball-like)
 const ZONE_PRESENCE_RATIO = 0.22;    // fraction of bright pixels in zone to call "ball present"
 const MOTION_DIFF_THRESHOLD = 28;    // avg pixel diff to call "motion" in swing zone
@@ -580,14 +765,16 @@ async function beginAnalysis() {
   const canvas = document.getElementById('calibCanvas'); // reuse offscreen canvas
   const ctx = canvas.getContext('2d');
 
-  // Calibration math
-  const [pLeft, pRight, pBall] = calibPoints;
-  const pxPerFoot = Math.hypot(pRight.x - pLeft.x, pRight.y - pLeft.y); // 1 ft span
-  const ballDiameterPx = pxPerFoot * BALL_DIAMETER_FT;
-  const zoneRadius = Math.max(ballDiameterPx * 1.6, 10);
-  const swingZoneRadius = zoneRadius * 4;
+  // Calibration math — scale comes from the measured (or manually tapped)
+  // ball diameter against the known real-world constant, no external
+  // reference object needed.
+  const ballDiameterPx = draftSession._calibBallDiameterPx;
+  const pxPerFoot = ballDiameterPx / BALL_DIAMETER_FT;
+  const presenceRadius = Math.max(ballDiameterPx * 1.6, 10); // localized check radius around a known ball position
+  const zoneX0 = draftSession._calibZoneRect.x0, zoneX1 = draftSession._calibZoneRect.x1;
+  const zoneY0 = draftSession._calibZoneRect.y0, zoneY1 = draftSession._calibZoneRect.y1;
 
-  draftSession.calibration = { pxPerFoot, ballZone: { x: pBall.x, y: pBall.y, r: zoneRadius } };
+  draftSession.calibration = { pxPerFoot, zone: { x0: zoneX0, y0: zoneY0, x1: zoneX1, y1: zoneY1 } };
 
   function brightRatio(cx, cy, r) {
     const x0 = Math.max(0, Math.round(cx - r)), y0 = Math.max(0, Math.round(cy - r));
@@ -604,10 +791,8 @@ async function beginAnalysis() {
     return total ? bright / total : 0;
   }
 
-  function avgFrameDiff(prevData, cx, cy, r) {
-    const x0 = Math.max(0, Math.round(cx - r)), y0 = Math.max(0, Math.round(cy - r));
-    const w = Math.min(canvas.width - x0, Math.round(r * 2));
-    const h = Math.min(canvas.height - y0, Math.round(r * 2));
+  function rectFrameDiff(prevData, x0, y0, x1, y1) {
+    const w = Math.min(canvas.width - x0, x1 - x0), h = Math.min(canvas.height - y0, y1 - y0);
     if (w <= 0 || h <= 0) return { diff: 0, data: null };
     const data = ctx.getImageData(x0, y0, w, h).data;
     if (!prevData || prevData.length !== data.length) return { diff: 0, data };
@@ -627,29 +812,36 @@ async function beginAnalysis() {
   }
 
   // ---- Pass 1: coarse scan to find swing events ----
+  // The ball can be in a different spot within the zone for every shot, so rather
+  // than checking one fixed point, we continuously search the whole zone while
+  // idle to track "wherever the ball currently is," freeze that position the
+  // moment a swing starts, then check specifically that spot afterward to tell
+  // a practice swing (ball still there) from a real shot (ball gone from there).
   const duration = video.duration;
   const step = 1 / COARSE_SAMPLE_HZ;
   let t = 0;
-  let prevSwingData = null;
+  let prevZoneData = null;
   let state = 'idle'; // idle -> swinging -> (cooldown)
   let lastMotionT = -10;
-  const events = []; // { t, type guess pending }
+  let knownBallPos = null;
+  const events = []; // { t, ballPresentAfter, origin }
 
   while (t < duration) {
     await seekTo(t);
-    const present = brightRatio(pBall.x, pBall.y, zoneRadius) > ZONE_PRESENCE_RATIO;
-    const { diff, data } = avgFrameDiff(prevSwingData, pBall.x, pBall.y, swingZoneRadius);
-    prevSwingData = data;
+    const { diff, data } = rectFrameDiff(prevZoneData, zoneX0, zoneY0, zoneX1, zoneY1);
+    prevZoneData = data;
     const motion = diff > MOTION_DIFF_THRESHOLD;
-
     if (motion) lastMotionT = t;
 
-    if (state === 'idle' && motion) {
-      state = 'swinging';
+    if (state === 'idle') {
+      const found = findBlobInRect(ctx, canvas, zoneX0, zoneY0, zoneX1, zoneY1, ballDiameterPx, BRIGHT_THRESHOLD);
+      if (found) knownBallPos = found;
+      if (motion) state = 'swinging';
     } else if (state === 'swinging' && !motion && (t - lastMotionT) > 0.12) {
-      // motion settled — check ball zone to classify
-      events.push({ t: lastMotionT, ballPresentAfter: present });
+      const stillThere = knownBallPos && brightRatio(knownBallPos.x, knownBallPos.y, presenceRadius) > ZONE_PRESENCE_RATIO;
+      events.push({ t: lastMotionT, ballPresentAfter: stillThere, origin: knownBallPos });
       state = 'idle';
+      knownBallPos = null; // force a fresh search — her next ball may be placed somewhere else in the zone
     }
 
     progressBar.style.width = Math.round((t / duration) * 55) + '%';
@@ -664,8 +856,8 @@ async function beginAnalysis() {
     progressBar.style.width = (55 + Math.round(((i+1)/Math.max(events.length,1)) * 40)) + '%';
     progressStatus.textContent = `Analyzing shot ${i+1} of ${events.length}…`;
 
-    if (ev.ballPresentAfter) {
-      // practice swing — no flight to track
+    if (ev.ballPresentAfter || !ev.origin) {
+      // practice swing (or we never confidently found a ball before this swing) — no flight to track
       shots.push({
         id: 'shot_' + ev.t.toFixed(3),
         startTime: Math.max(0, ev.t - 1),
@@ -677,11 +869,11 @@ async function beginAnalysis() {
       continue;
     }
 
-    // real shot — track ball in fine window after departure
+    // real shot — track ball in fine window after departure, starting from its known address position
     const trajectory = [];
-    const searchR = zoneRadius * 1.4;
+    const searchR = presenceRadius * 1.4;
     const fineStep = 1 / FINE_SAMPLE_HZ;
-    let cx = pBall.x, cy = pBall.y;
+    let cx = ev.origin.x, cy = ev.origin.y;
     for (let ft = ev.t; ft < Math.min(duration, ev.t + FINE_WINDOW_S); ft += fineStep) {
       await seekTo(ft);
       // search a region around last known position, expanding outward/upward over time
@@ -728,6 +920,93 @@ async function beginAnalysis() {
 
   toast('Session saved. You can delete the original from Photos now if you\'d like.');
   openReport(draftSession.id);
+}
+
+function findBallBlobWithSize(ctx, canvas, x0, y0, x1, y1, threshold) {
+  // Used only at calibration time. Coarsely scans the zone for the brightest
+  // candidate cell, then measures a tight bounding box of bright pixels
+  // around it to estimate the blob's actual pixel diameter — and rejects
+  // anything too elongated to plausibly be a round ball (a shoe edge, a
+  // mat seam, etc.), since we have no way to confirm this visually beyond
+  // the confirmation step shown to the user.
+  const cell = 26;
+  let best = null;
+  for (let cy = y0; cy < y1; cy += cell) {
+    for (let cx = x0; cx < x1; cx += cell) {
+      const w = Math.min(cell, x1 - cx), h = Math.min(cell, y1 - cy);
+      if (w <= 4 || h <= 4) continue;
+      const data = ctx.getImageData(Math.round(cx), Math.round(cy), Math.round(w), Math.round(h)).data;
+      let bright = 0, total = 0;
+      for (let i = 0; i < data.length; i += 4) {
+        const lum = (data[i] + data[i+1] + data[i+2]) / 3;
+        if (lum > threshold) bright++;
+        total++;
+      }
+      const ratio = total ? bright / total : 0;
+      if (ratio > 0.3 && (!best || ratio > best.ratio)) best = { cx: cx + w/2, cy: cy + h/2, ratio };
+    }
+  }
+  if (!best) return null;
+
+  const winR = cell * 2;
+  const wx0 = Math.max(x0, Math.round(best.cx - winR)), wy0 = Math.max(y0, Math.round(best.cy - winR));
+  const ww = Math.min(x1, best.cx + winR) - wx0, wh = Math.min(y1, best.cy + winR) - wy0;
+  if (ww <= 0 || wh <= 0) return null;
+  const data = ctx.getImageData(wx0, wy0, ww, wh).data;
+  let minX = ww, maxX = 0, minY = wh, maxY = 0, brightCount = 0;
+  for (let py = 0; py < wh; py++) {
+    for (let px = 0; px < ww; px++) {
+      const i = (py * ww + px) * 4;
+      const lum = (data[i] + data[i+1] + data[i+2]) / 3;
+      if (lum > threshold) {
+        if (px < minX) minX = px; if (px > maxX) maxX = px;
+        if (py < minY) minY = py; if (py > maxY) maxY = py;
+        brightCount++;
+      }
+    }
+  }
+  if (brightCount < 10) return null;
+  const boxW = maxX - minX, boxH = maxY - minY;
+  if (boxW < 3 || boxH < 3) return null;
+  const roundness = Math.min(boxW, boxH) / Math.max(boxW, boxH);
+  if (roundness < 0.55) return null; // too elongated to be a ball
+
+  return {
+    x: wx0 + (minX + maxX) / 2,
+    y: wy0 + (minY + maxY) / 2,
+    diameterPx: (boxW + boxH) / 2,
+    score: best.ratio * roundness
+  };
+}
+
+function findBlobInRect(ctx, canvas, x0, y0, x1, y1, expectedDiameterPx, threshold) {
+  // Tiles the zone into ball-sized cells and returns the centroid of whichever
+  // cell looks most ball-like (brightest, roughly the right size). This is how
+  // we locate "wherever today's ball happens to be" without a fixed point.
+  const cell = Math.max(expectedDiameterPx * 1.3, 16);
+  let best = null, bestRatio = 0;
+  for (let cy = y0; cy < y1; cy += cell) {
+    for (let cx = x0; cx < x1; cx += cell) {
+      const w = Math.min(cell, x1 - cx), h = Math.min(cell, y1 - cy);
+      if (w <= 0 || h <= 0) continue;
+      const data = ctx.getImageData(Math.round(cx), Math.round(cy), Math.round(w), Math.round(h)).data;
+      let sumX = 0, sumY = 0, bright = 0, total = 0;
+      for (let py = 0; py < h; py += 2) {
+        for (let px = 0; px < w; px += 2) {
+          const i = (py * Math.round(w) + px) * 4;
+          const lum = (data[i] + data[i+1] + data[i+2]) / 3;
+          if (lum > threshold) { sumX += px; sumY += py; bright++; }
+          total++;
+        }
+      }
+      const ratio = total ? bright / total : 0;
+      if (ratio > ZONE_PRESENCE_RATIO && ratio > bestRatio && bright > 4) {
+        bestRatio = ratio;
+        best = { x: cx + sumX / bright, y: cy + sumY / bright };
+      }
+    }
+  }
+  return best;
 }
 
 function findBrightBlob(ctx, canvas, nearX, nearY, radius, threshold) {
