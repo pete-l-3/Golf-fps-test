@@ -70,6 +70,21 @@
   .guide-label { position: absolute; bottom: 8px; left: 8px; right: 8px; background: rgba(10,31,21,0.7); color: var(--parchment); font-size: 11.5px; padding: 8px 10px; border-radius: 8px; line-height: 1.4; text-align: center; }
   .landscape-flag { position: absolute; top: 8px; right: 8px; background: rgba(10,31,21,0.7); color: var(--brass-light); font-size: 10.5px; font-weight: 700; padding: 5px 9px; border-radius: 100px; letter-spacing: .04em; text-transform: uppercase; }
 
+  /* When the phone is physically rotated landscape for the alignment step,
+     collapse the setup screen to a clean full-bleed viewfinder instead of
+     squeezing the normal portrait layout sideways. Only this one screen
+     needs this — everything else in the app is used in portrait. */
+  @media (orientation: landscape) {
+    #view-setup.active { padding: 0; }
+    #view-setup.active .setup-text-col,
+    #view-setup.active .tip-list { display: none; }
+    #view-setup.active .preview-wrap { margin: 0; border-radius: 0; aspect-ratio: auto; width: 100vw; height: 100vh; }
+    #view-setup.active #setupContinueBtn {
+      position: fixed; bottom: max(20px, env(safe-area-inset-bottom)); left: 16px; right: 16px; width: auto; z-index: 10;
+    }
+    #view-setup.active .landscape-flag { display: none; }
+  }
+
   .tip-list { list-style: none; padding: 0; margin: 0 0 18px; }
   .tip-list li { font-size: 13px; line-height: 1.5; color: var(--sage); padding: 7px 0 7px 20px; position: relative; border-bottom: 1px solid rgba(242,236,220,0.06); }
   .tip-list li:last-child { border-bottom: none; }
@@ -133,49 +148,43 @@
 
 <!-- ============ SETUP ============ -->
 <div class="view" id="view-setup">
-  <button class="back" id="setupBack">Back</button>
-  <div class="eyebrow">Step 1 of 4</div>
-  <h1 class="page-title">Set up the shot</h1>
-  <p class="lede">Position the phone behind her, then confirm the club for this session.</p>
+  <div class="setup-text-col">
+    <button class="back" id="setupBack">Back</button>
+    <div class="eyebrow">Step 1 of 4</div>
+    <h1 class="page-title">Set up the shot</h1>
+    <p class="lede">Position the phone behind her, then confirm the club for this session.</p>
 
-  <label class="field-label">Club</label>
-  <select id="clubSelect">
-    <option>Driver</option><option>3 Wood</option><option>5 Wood</option>
-    <option>3 Hybrid</option><option>3 Iron</option><option>4 Iron</option><option>5 Iron</option>
-    <option>6 Iron</option><option>7 Iron</option><option>8 Iron</option>
-    <option>9 Iron</option><option>PW</option><option>GW</option>
-    <option>SW</option><option>LW</option><option>Putter</option>
-  </select>
+    <label class="field-label">Club</label>
+    <select id="clubSelect">
+      <option>Driver</option><option>3 Wood</option><option>5 Wood</option>
+      <option>3 Hybrid</option><option>3 Iron</option><option>4 Iron</option><option>5 Iron</option>
+      <option>6 Iron</option><option>7 Iron</option><option>8 Iron</option>
+      <option>9 Iron</option><option>PW</option><option>GW</option>
+      <option>SW</option><option>LW</option><option>Putter</option>
+    </select>
+  </div>
 
   <div class="preview-wrap" id="previewWrap">
     <video id="alignVideo" autoplay playsinline muted></video>
     <span class="landscape-flag">⟷ Landscape</span>
     <svg class="setup-guide-svg" viewBox="0 0 400 225" preserveAspectRatio="xMidYMid slice">
       <!-- ground line -->
-      <line x1="0" y1="188" x2="400" y2="188" stroke="rgba(242,236,220,0.22)" stroke-width="1" stroke-dasharray="4 5"/>
-      <!-- golfer silhouette, address stance, facing the ball marker -->
-      <g transform="translate(252,86)" fill="rgba(242,236,220,0.6)">
-        <circle cx="0" cy="0" r="11"/>
-        <path d="M -7 9 Q -19 38 -9 68 L 9 68 Q 19 38 7 9 Z"/>
-        <line x1="-5" y1="64" x2="-13" y2="98" stroke="rgba(242,236,220,0.6)" stroke-width="7" stroke-linecap="round"/>
-        <line x1="5" y1="64" x2="13" y2="98" stroke="rgba(242,236,220,0.6)" stroke-width="7" stroke-linecap="round"/>
-        <line x1="0" y1="18" x2="-66" y2="92" stroke="rgba(242,236,220,0.6)" stroke-width="4.5" stroke-linecap="round"/>
+      <line x1="0" y1="172" x2="400" y2="172" stroke="rgba(242,236,220,0.22)" stroke-width="1" stroke-dasharray="4 5"/>
+      <!-- allowable ball placement area: the margin of error the camera can still track within -->
+      <g transform="translate(200,150)">
+        <rect x="-70" y="-32" width="140" height="64" rx="10" fill="rgba(201,162,39,0.08)" stroke="#C9A227" stroke-width="1.5" stroke-dasharray="6 5"/>
+        <circle cx="0" cy="0" r="5" fill="#F2ECDC" stroke="#0F2B1D" stroke-width="1"/>
       </g>
-      <text x="252" y="118" font-family="Inter, sans-serif" font-size="11" fill="#E0BE4F" text-anchor="middle" font-weight="600">She stands here</text>
-      <!-- ball marker / imaginary 1ft square zone -->
-      <g transform="translate(176,184)">
-        <rect x="-24" y="-11" width="48" height="22" rx="5" fill="none" stroke="#C9A227" stroke-width="1.5" stroke-dasharray="5 4"/>
-        <circle cx="0" cy="0" r="4.5" fill="#F2ECDC" stroke="#0F2B1D" stroke-width="1"/>
-      </g>
-      <text x="176" y="212" font-family="Inter, sans-serif" font-size="11" fill="#E0BE4F" text-anchor="middle" font-weight="600">Ball goes here</text>
+      <text x="200" y="100" font-family="Inter, sans-serif" font-size="12" fill="#E0BE4F" text-anchor="middle" font-weight="600">Keep the ball anywhere in this box</text>
+      <text x="200" y="208" font-family="Inter, sans-serif" font-size="10.5" fill="rgba(144,163,140,0.9)" text-anchor="middle">dot = ideal spot, box = margin for error</text>
     </svg>
   </div>
 
   <ul class="tip-list">
     <li>Mount the phone <b style="color:var(--brass-light)">sideways (landscape)</b> on the tripod — it captures the widest view of the swing and flight</li>
     <li>Stand the phone behind her, roughly hip height</li>
-    <li>Mark a 1'×1' square on the ground (tape, chalk, a hoop — whatever's handy) where the ball goes. It's just for her own consistency, so she places the ball in the same spot every time — the camera doesn't need to "see" it</li>
-    <li>Try ~6–8 ft back to start, then adjust until she and the ball both frame comfortably</li>
+    <li>Mark a 1'×1' square on the ground (tape, chalk, a hoop — whatever's handy) where the ball goes. It's mainly for her own consistency between shots — the box above just shows how much wiggle room the camera can still track within</li>
+    <li>Try ~6–8 ft back to start, then adjust until the ball placement box frames comfortably in view</li>
     <li>This preview is just for lining things up — actual recording happens in Camera, not here</li>
   </ul>
 
