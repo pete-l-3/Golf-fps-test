@@ -143,7 +143,7 @@
   .suggestion-box { background: rgba(201,162,39,0.1); border: 1px solid rgba(201,162,39,0.25); border-radius: 14px; padding: 14px; font-size: 13.5px; line-height: 1.5; color: var(--brass-light); margin-bottom: 16px; }
 
   .hidden-input { display: none; }
-  .offscreen-video { position: fixed; top: 0; left: 0; width: 2px; height: 2px; opacity: 0.01; pointer-events: none; z-index: -1; }
+  .offscreen-video { position: fixed; top: 0; left: 0; width: 320px; height: 180px; opacity: 0.02; pointer-events: none; z-index: -1; }
   .toast { position: fixed; bottom: 24px; left: 20px; right: 20px; background: var(--parchment); color: var(--ink); border-radius: 12px; padding: 14px 16px; font-size: 13.5px; font-weight: 600; box-shadow: 0 12px 30px -10px rgba(0,0,0,0.5); transform: translateY(100px); opacity: 0; transition: all .3s ease; z-index: 50; }
   .toast.show { transform: translateY(0); opacity: 1; }
 </style>
@@ -470,10 +470,15 @@ document.getElementById('fileInput').addEventListener('change', async (e) => {
   video.src = URL.createObjectURL(file);
   await new Promise(res => { video.onloadedmetadata = res; });
 
+  // iOS Safari often won't have real frame data ready just from loading
+  // metadata — briefly playing (then immediately pausing) wakes the
+  // decoder up before we try to seek to a specific frame.
+  try { await video.play(); video.pause(); video.currentTime = 0; } catch (err) { /* ignore — some devices block this without a user gesture, fine, we still try the seek below */ }
+
   document.getElementById('importPickStage').style.display = 'none';
   document.getElementById('calibrateStage').style.display = 'block';
   document.getElementById('calibWrap').style.display = 'block';
-  document.getElementById('calibInstruction').textContent = 'Loading the first frame of her video…';
+  document.getElementById('calibInstruction').textContent = 'Loading the first frame of her video — large Slo-Mo files can take a bit…';
   calibPoints = [];
   drawCalibFrame();
 });
@@ -490,8 +495,8 @@ function drawCalibFrame() {
     if (settled) return;
     settled = true;
     document.getElementById('calibInstruction').textContent =
-      "Couldn't load a frame from that video — try Restart Taps, or go back and pick the file again.";
-  }, 4000);
+      "Still couldn't load a frame from that video after waiting — try Restart Taps, or go back and pick the file again. If it keeps happening, the file may be too large for Safari to handle smoothly.";
+  }, 15000);
 
   video.onseeked = () => {
     if (settled) return;
